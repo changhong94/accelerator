@@ -187,15 +187,19 @@ type TieredCache struct {
 	tierFills  []atomic.Uint64
 	tierErrors []atomic.Uint64 // per-tier tryTier err-return count
 
-	originHits   atomic.Uint64
-	originMisses atomic.Uint64
-	originErrors atomic.Uint64
+	originChunkHits  atomic.Uint64
+	originChunkBytes atomic.Uint64
+	originHits       atomic.Uint64
+	originMisses     atomic.Uint64
+	originErrors     atomic.Uint64
 }
 
 // TieredCounters is the snapshot returned by TieredCache.Counters().
 // The server package composes these with per-tier type detail (rocks
 // properties, EC peers, upstream endpoint) to produce cache.TieredStats.
 type TieredCounters struct {
+	OriginChunkHits   uint64
+	OriginChunkBytes  uint64
 	TierHits          []uint64
 	TierMisses        []uint64
 	TierFills         []uint64
@@ -249,6 +253,8 @@ func NewTieredCache(origin Getter, tiers ...Tier) *TieredCache {
 // call concurrently with Get/startFill.
 func (tc *TieredCache) Counters() TieredCounters {
 	c := TieredCounters{
+		OriginChunkHits:   tc.originChunkHits.Load(),
+		OriginChunkBytes:  tc.originChunkBytes.Load(),
 		TierHits:          make([]uint64, len(tc.tiers)),
 		TierMisses:        make([]uint64, len(tc.tiers)),
 		TierFills:         make([]uint64, len(tc.tiers)),
@@ -309,6 +315,10 @@ restart:
 			case CacheHit, CacheHitMiss:
 				if isOrigin {
 					tc.originHits.Add(1)
+					if p == store.PartitionChunk && result == CacheHit {
+						tc.originChunkHits.Add(1)
+						tc.originChunkBytes.Add(uint64(len(blob.Bytes())))
+					}
 				} else {
 					tc.tierHits[i].Add(1)
 				}

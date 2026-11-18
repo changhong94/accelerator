@@ -134,9 +134,11 @@ func (s *InfoServer) snapshot() pkgcache.DaemonStats {
 			tiers[i] = t
 		}
 		origin := pkgcache.OriginStats{
-			Hits:   cnt.OriginHits,
-			Misses: cnt.OriginMisses,
-			Errors: cnt.OriginErrors,
+			ChunkHits:  cnt.OriginChunkHits,
+			ChunkBytes: cnt.OriginChunkBytes,
+			Hits:       cnt.OriginHits,
+			Misses:     cnt.OriginMisses,
+			Errors:     cnt.OriginErrors,
 		}
 		if s.origin != nil {
 			origin.Type = s.origin.Type
@@ -194,10 +196,11 @@ func toRocksCFStats(in []rocks.CFStats) []pkgcache.RocksCFStats {
 	out := make([]pkgcache.RocksCFStats, len(in))
 	for i, s := range in {
 		out[i] = pkgcache.RocksCFStats{
-			Name:      s.Name,
-			NumKeys:   s.NumKeys,
-			DiskUsage: s.DiskUsage,
-			MemUsage:  s.MemUsage,
+			Name:               s.Name,
+			NumKeys:            s.NumKeys,
+			DiskUsage:          s.DiskUsage,
+			MemUsage:           s.MemUsage,
+			DatabaseStatistics: s.DatabaseStatistics,
 		}
 	}
 	return out
@@ -235,12 +238,14 @@ func toPb(ds pkgcache.DaemonStats) *cachepb.InfoReply {
 		reply.Tiered = &cachepb.TieredStats{
 			Tiers: tiers,
 			Origin: &cachepb.OriginStats{
-				Type:      ds.Tiered.Origin.Type,
-				Hits:      ds.Tiered.Origin.Hits,
-				Misses:    ds.Tiered.Origin.Misses,
-				Errors:    ds.Tiered.Origin.Errors,
-				StorePath: ds.Tiered.Origin.StorePath,
-				Endpoint:  ds.Tiered.Origin.Endpoint,
+				ChunkHits:  ds.Tiered.Origin.ChunkHits,
+				ChunkBytes: ds.Tiered.Origin.ChunkBytes,
+				Type:       ds.Tiered.Origin.Type,
+				Hits:       ds.Tiered.Origin.Hits,
+				Misses:     ds.Tiered.Origin.Misses,
+				Errors:     ds.Tiered.Origin.Errors,
+				StorePath:  ds.Tiered.Origin.StorePath,
+				Endpoint:   ds.Tiered.Origin.Endpoint,
 			},
 		}
 	}
@@ -288,10 +293,11 @@ func rocksToPb(in []pkgcache.RocksCFStats) []*cachepb.RocksCFStats {
 	out := make([]*cachepb.RocksCFStats, len(in))
 	for i, s := range in {
 		out[i] = &cachepb.RocksCFStats{
-			Name:      s.Name,
-			NumKeys:   s.NumKeys,
-			DiskUsage: s.DiskUsage,
-			MemUsage:  s.MemUsage,
+			Name:               s.Name,
+			NumKeys:            s.NumKeys,
+			DiskUsage:          s.DiskUsage,
+			MemUsage:           s.MemUsage,
+			DatabaseStatistics: s.DatabaseStatistics,
 		}
 	}
 	return out

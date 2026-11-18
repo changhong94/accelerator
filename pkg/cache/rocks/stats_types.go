@@ -4,6 +4,8 @@ import "fmt"
 
 // CFStats holds a snapshot of RocksDB properties for one column family.
 type CFStats struct {
+	DatabaseStatistics string // present only on chunk CF; scope is the entire DB
+
 	Name        string
 	NumKeys     string
 	DiskUsage   string

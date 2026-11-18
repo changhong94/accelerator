@@ -86,6 +86,8 @@ message TierStats {
 // OriginStats is the final cascade layer. Origin is a Getter (no
 // Fill), so no Fills field. Errors mirrors TierStats.Errors.
 message OriginStats {
+    uint64 chunk_hits = 7;
+    uint64 chunk_bytes = 8;
     string type   = 1;
     uint64 hits   = 2;
     uint64 misses = 3;
@@ -121,6 +123,8 @@ message PeerStats {
 // because that is how RocksDB's GetProperty returns them — we avoid
 // lossy conversion in the daemon and let consumers parse if they want.
 message RocksCFStats {
+    // Cumulative database-wide counters; emitted once, on the chunk entry.
+    string database_statistics = 5;
     string name       = 1;
     string num_keys   = 2;
     string disk_usage = 3;

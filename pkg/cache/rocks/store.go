@@ -35,6 +35,11 @@ var roPool = sync.Pool{
 // cascades sketch.Close during impl.Close. Callers never construct or
 // close the sketch directly.
 type impl struct {
+	observeReads bool
+	sources      sourceCounters
+
+	statistics *grocksdb.Options // database-wide counters, retained until Close
+
 	db       *grocksdb.DB
 	cfh      map[string]*grocksdb.ColumnFamilyHandle
 	sketch   *freq.Sketch
@@ -104,12 +109,14 @@ func openImpl(cfg runtime.RocksConfig, freqCfg runtime.FreqConfig) (*impl, error
 	// runs after this point — Go's memory model guarantees the captured
 	// pointer sees initialised fields.
 	inst := &impl{
-		db:       db,
-		cfh:      cfh,
-		filter:   filter,
-		ro:       grocksdb.NewDefaultReadOptions(),
-		wo:       grocksdb.NewDefaultWriteOptions(),
-		readOnly: false,
+		db:           db,
+		statistics:   opts.DBOpts,
+		observeReads: cfg.Statistics,
+		cfh:          cfh,
+		filter:       filter,
+		ro:           grocksdb.NewDefaultReadOptions(),
+		wo:           grocksdb.NewDefaultWriteOptions(),
+		readOnly:     false,
 	}
 
 	sketch := buildSketch(freqCfg, func(data []byte) {
@@ -184,12 +191,14 @@ func openReadOnlyImpl(cfg runtime.RocksConfig) (*impl, error) {
 	}
 
 	return &impl{
-		db:       db,
-		cfh:      cfh,
-		sketch:   nil, // intentional: inspect tooling never touches frequency state
-		ro:       grocksdb.NewDefaultReadOptions(),
-		wo:       nil, // intentional: any Put is rejected at the Go layer
-		readOnly: true,
+		db:           db,
+		statistics:   opts.DBOpts,
+		observeReads: cfg.Statistics,
+		cfh:          cfh,
+		sketch:       nil, // intentional: inspect tooling never touches frequency state
+		ro:           grocksdb.NewDefaultReadOptions(),
+		wo:           nil, // intentional: any Put is rejected at the Go layer
+		readOnly:     true,
 	}, nil
 }
 
@@ -224,7 +233,13 @@ func (s *impl) get(ctx context.Context, ns string, key []byte) (cache.Blob, bool
 
 	// Use per-call ReadOptions to avoid CGO contention on shared s.ro.
 	ro := roPool.Get().(*grocksdb.ReadOptions)
-	slice, err := s.db.GetCF(ro, cf, key)
+	var slice *grocksdb.Slice
+	var err error
+	if s.observeReads && ns == cfChunk {
+		slice, err = s.observedGet(ro, cf, key)
+	} else {
+		slice, err = s.db.GetCF(ro, cf, key)
+	}
 	roPool.Put(ro)
 	if err != nil {
 		return nil, false, fmt.Errorf("rocks: get: %w", err)
@@ -306,6 +321,9 @@ func (s *impl) Close() error {
 		h.Destroy()
 	}
 	s.db.Close()
+	if s.statistics != nil {
+		s.statistics.Destroy()
+	}
 	return nil
 }
 

@@ -59,6 +59,10 @@ type FreqConfig struct {
 // no YAML knob to disable or tune it. Large values bypass the LSM main
 // path automatically; small values (< 4 KiB) remain inline in the SST.
 type RocksConfig struct {
+	// BlobCacheBytes is separate from the SST block cache budget. Zero disables it.
+	BlobCacheBytes string `yaml:"blob_cache_bytes"`
+	Statistics     bool   `yaml:"statistics"` // cumulative database counters, no timers
+
 	Path              string  `yaml:"path"`
 	DiskBytes         string  `yaml:"disk_bytes"`          // e.g. "1TiB"
 	MemRatio          float64 `yaml:"mem_ratio"`           // BlockCache = disk_bytes * mem_ratio

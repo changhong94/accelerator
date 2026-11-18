@@ -53,6 +53,9 @@ type TierStats struct {
 // OriginStats is the final cascade layer (store or upstream). No Fills
 // — origin is a Getter, not a Filler. Errors mirrors TierStats.Errors.
 type OriginStats struct {
+	ChunkHits  uint64 `json:"chunk_hits"`
+	ChunkBytes uint64 `json:"chunk_bytes"` // encoded object bytes, not plaintext
+
 	Type   string `json:"type"`
 	Hits   uint64 `json:"hits"`
 	Misses uint64 `json:"misses"`
@@ -85,6 +88,8 @@ type PeerStats struct {
 // RocksCFStats mirrors rocks.CFStats with JSON tags; the server
 // package converts from rocks.CFStats at snapshot time.
 type RocksCFStats struct {
+	DatabaseStatistics string `json:"database_statistics,omitempty"` // cumulative, DB scope; do not sum across CFs
+
 	Name      string `json:"name"`
 	NumKeys   string `json:"num_keys"`
 	DiskUsage string `json:"disk_usage"`

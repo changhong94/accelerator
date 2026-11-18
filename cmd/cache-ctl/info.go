@@ -136,12 +136,14 @@ func fromPb(r *cachepb.InfoReply) cache.DaemonStats {
 		origin := cache.OriginStats{}
 		if r.Tiered.Origin != nil {
 			origin = cache.OriginStats{
-				Type:      r.Tiered.Origin.Type,
-				Hits:      r.Tiered.Origin.Hits,
-				Misses:    r.Tiered.Origin.Misses,
-				Errors:    r.Tiered.Origin.Errors,
-				StorePath: r.Tiered.Origin.StorePath,
-				Endpoint:  r.Tiered.Origin.Endpoint,
+				ChunkHits:  r.Tiered.Origin.ChunkHits,
+				ChunkBytes: r.Tiered.Origin.ChunkBytes,
+				Type:       r.Tiered.Origin.Type,
+				Hits:       r.Tiered.Origin.Hits,
+				Misses:     r.Tiered.Origin.Misses,
+				Errors:     r.Tiered.Origin.Errors,
+				StorePath:  r.Tiered.Origin.StorePath,
+				Endpoint:   r.Tiered.Origin.Endpoint,
 			}
 		}
 		ds.Tiered = &cache.TieredStats{Tiers: tiers, Origin: origin}
@@ -193,10 +195,11 @@ func rocksFromPb(in []*cachepb.RocksCFStats) []cache.RocksCFStats {
 			continue
 		}
 		out[i] = cache.RocksCFStats{
-			Name:      s.Name,
-			NumKeys:   s.NumKeys,
-			DiskUsage: s.DiskUsage,
-			MemUsage:  s.MemUsage,
+			Name:               s.Name,
+			NumKeys:            s.NumKeys,
+			DiskUsage:          s.DiskUsage,
+			MemUsage:           s.MemUsage,
+			DatabaseStatistics: s.DatabaseStatistics,
 		}
 	}
 	return out

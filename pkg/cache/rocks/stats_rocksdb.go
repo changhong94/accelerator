@@ -31,7 +31,14 @@ func (s *impl) AllStats() []CFStats {
 		if name == cfDefault {
 			continue
 		}
-		result = append(result, getCFStats(s.db, cf, name))
+		stats := getCFStats(s.db, cf, name)
+		if name == cfChunk && s.statistics != nil {
+			stats.DatabaseStatistics = s.statistics.GetStatisticsString()
+			if s.observeReads {
+				stats.DatabaseStatistics += "\n" + s.sources.report()
+			}
+		}
+		result = append(result, stats)
 	}
 	return result
 }

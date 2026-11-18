@@ -56,6 +56,10 @@ func BuildOptions(cfg runtime.RocksConfig) *OpenOptions {
 
 	// Database options
 	dbOpts := grocksdb.NewDefaultOptions()
+	if cfg.Statistics {
+		dbOpts.EnableStatistics()
+		dbOpts.SetStatisticsLevel(grocksdb.StatisticsLevelExceptHistogramOrTimers)
+	}
 	dbOpts.SetBlockBasedTableFactory(bbto)
 	dbOpts.SetCreateIfMissing(true)
 	dbOpts.SetCreateIfMissingColumnFamilies(true)
@@ -98,7 +102,16 @@ func BuildOptions(cfg runtime.RocksConfig) *OpenOptions {
 	// Small values (< 4 KiB) remain inline in the SST: SetMinBlobSize
 	// is the per-value gate, so a KiB-sized manifest metadata blob is
 	// unaffected and still costs exactly one IO to fetch.
+	blobCacheBytes, _ := util.ParseSize(cfg.BlobCacheBytes)
+	var blobCache *grocksdb.Cache
+	if blobCacheBytes > 0 {
+		blobCache = grocksdb.NewLRUCache(blobCacheBytes)
+		defer blobCache.Destroy() // Options retain shared ownership in RocksDB.
+	}
 	applyBlobDB := func(o *grocksdb.Options) {
+		if blobCache != nil {
+			o.SetBlobCache(blobCache)
+		}
 		o.EnableBlobFiles(true)
 		o.SetMinBlobSize(4 << 10)    // 4 KiB inline threshold
 		o.SetBlobFileSize(256 << 20) // 256 MiB per blob file
