@@ -472,6 +472,10 @@ type segReader struct {
 	run      sparse.Run
 }
 
+// Remaining bounds the immutable sparse segment; chunkers need not allocate
+// their dense-stream buffer for a single dirty page.
+func (r *segReader) Remaining() uint64 { return r.end - r.cur }
+
 func (r *segReader) Read(p []byte) (int, error) {
 	if r.cur >= r.end {
 		return 0, io.EOF

@@ -162,3 +162,19 @@ func (c *fixedChunker) Chunk(r io.Reader, cb Callback) error {
 func (c *fixedChunker) Info() Info {
 	return Info{Mode: "fixed", MinSize: c.size, MaxSize: c.size}
 }
+
+// boundedBufferSize accepts an exact remaining-byte bound from an immutable
+// segment reader. It changes allocation only, never chunking parameters.
+// Keep a one-byte buffer for empty segments so EOF follows the usual path.
+func boundedBufferSize(r io.Reader, normal int) int {
+	if sized, ok := r.(interface{ Remaining() uint64 }); ok {
+		n := sized.Remaining()
+		if n == 0 {
+			return 1
+		}
+		if n < uint64(normal) {
+			return int(n)
+		}
+	}
+	return normal
+}

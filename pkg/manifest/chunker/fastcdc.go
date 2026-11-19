@@ -141,7 +141,7 @@ func deriveMasks(minSize, avgSize, maxSize uint32) cdcMasks {
 func chunkCDC(r io.Reader, minSize, avgSize, maxSize uint32, cb Callback) error {
 	masks := deriveMasks(minSize, avgSize, maxSize)
 	// buf holds buffered input data; pending[0:pendingN] is the unconsumed portion.
-	buf := make([]byte, readBufSize+int(maxSize))
+	buf := make([]byte, boundedBufferSize(r, readBufSize+int(maxSize)))
 	pendingN := 0
 	fileOffset := uint64(0)
 	eof := false

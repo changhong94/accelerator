@@ -5,7 +5,7 @@ import "io"
 // chunkFixed performs fixed-size chunking. The last chunk may be smaller
 // than size. Zero chunks (all bytes zero) have IsZero=true and Data=nil.
 func chunkFixed(r io.Reader, size uint32, cb Callback) error {
-	buf := make([]byte, size)
+	buf := make([]byte, boundedBufferSize(r, int(size)))
 	offset := uint64(0)
 
 	for {
