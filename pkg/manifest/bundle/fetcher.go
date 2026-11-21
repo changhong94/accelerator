@@ -104,6 +104,13 @@ func NewManifestFetcherWithResolver(current *Reader, currentFetcher fetch.Fetche
 	}
 }
 
+// WithFallback returns an independent view retaining the authenticated local
+// Bundle and ordered references while attaching the validated outer scope.
+// It does not mutate the original fetcher or reopen the Bundle.
+func (f *ManifestFetcher) WithFallback(remote fetch.Fetcher) *ManifestFetcher {
+	return NewManifestFetcherWithResolver(f.current, f.currentFetcher, f.resolver, remote)
+}
+
 // SelectRoot requires the root Manifest to be physically present in the
 // current Bundle. It never consults refs or remote.
 func (f *ManifestFetcher) SelectRoot(key store.ContentKey) (ManifestSource, error) {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"strconv"
 	"strings"
 
@@ -1217,6 +1218,40 @@ type tarSourceRun[S tarRunReader] struct {
 func (r tarSourceRun[S]) Offset() uint64       { return r.offset }
 func (r tarSourceRun[S]) End() uint64          { return r.end }
 func (r tarSourceRun[S]) Kind() sparse.RunKind { return r.kind }
+
+// LocalFileRange optionally exposes the exact physical range of a plaintext
+// Data run. The descriptor is borrowed and remains owned by the source; callers
+// must keep that source alive or duplicate the descriptor. Encrypted, sequential
+// and other wrapped readers deliberately do not expose this capability.
+func (r tarSourceRun[S]) LocalFileRange() (*os.File, uint64, bool) {
+	s, ok := any(r.source).(*readerAtSource)
+	if !ok || r.kind != sparse.Data || r.end <= r.offset {
+		return nil, 0, false
+	}
+	// SourceAt adds only the exact-read/error-classification adapter here.
+	// Do not unwrap arbitrary readers or authenticated record decoders.
+	reader := s.ra
+	if wrapped, ok := reader.(artifactReaderAt); ok {
+		reader = wrapped.ReaderAt
+	}
+	f, ok := reader.(*os.File)
+	if !ok {
+		return nil, 0, false
+	}
+	i := s.extentAt(r.offset)
+	if i >= len(s.extents) {
+		return nil, 0, false
+	}
+	e := s.extents[i]
+	if r.offset < uint64(e.Offset) || r.end > uint64(e.Offset+e.Size) {
+		return nil, 0, false
+	}
+	physical := s.dataStart + s.packedPrefix[i] + int64(r.offset) - e.Offset
+	if physical < 0 {
+		return nil, 0, false
+	}
+	return f, uint64(physical), true
+}
 
 func (r tarSourceRun[S]) ReadAt(ctx context.Context, buf []byte, innerOffset uint64) (int, error) {
 	if r.end <= r.offset {

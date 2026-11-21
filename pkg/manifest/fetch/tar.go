@@ -25,6 +25,7 @@ type tarFileStream struct {
 	sparse.Source
 	f            *os.File
 	physicalSize int64
+	carrierInfo  os.FileInfo
 	sourceCloser io.Closer
 	digestScheme string
 	digest       string
@@ -63,6 +64,7 @@ func OpenTarStream(path string, options ...tarstream.ReadOption) (Stream, error)
 		Source:       src,
 		f:            f,
 		physicalSize: st.Size(),
+		carrierInfo:  st,
 		digestScheme: digestScheme,
 		digest:       digest,
 	}
@@ -71,6 +73,11 @@ func OpenTarStream(path string, options ...tarstream.ReadOption) (Stream, error)
 	}
 	return stream, nil
 }
+
+// CarrierIdentity identifies the held immutable inode at open time. It does not
+// assert full content verification. Local CoW branches can retain this exact
+// inode instead of re-encoding an already admitted disk dependency.
+func (s *tarFileStream) CarrierIdentity() os.FileInfo { return s.carrierInfo }
 
 func (s *tarFileStream) Digest() (string, string) { return s.digestScheme, s.digest }
 func (s *tarFileStream) TarStreamDigest(name string) ([32]byte, bool) {
