@@ -263,7 +263,7 @@ func sourceFromSequential(r io.Reader, name string, options readOptions) (sparse
 		return nil, "", fmt.Errorf("%w: metadata tail size %d exceeds %d", ErrInvalidCanonicalTarstream, tailSize, maxMetadataTailSize)
 	}
 	identity := newIdentityAccumulator(
-		uint64(view.meta.payloadSize), payloadExtents, payloadPacked, view.meta.logical-view.meta.payloadSize, view.meta.presence, view.meta.extents,
+		uint64(view.meta.payloadSize), payloadExtents, payloadPacked, view.meta.logical-view.meta.payloadSize, view.meta.presence, view.meta.extents, view.meta.compactIdentity,
 	)
 	view.src = io.TeeReader(view.src, identity)
 	verifier := &sequentialVerifier{reader: tracked, meta: &view.meta, options: options, identity: identity, encrypted: geometry != nil}

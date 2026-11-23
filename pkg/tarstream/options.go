@@ -28,10 +28,11 @@ type CodecOption interface {
 }
 
 type writeOptions struct {
-	codec        Codec
-	codecSet     bool
-	beforeCommit func(context.Context) error
-	indexMemory  uint64
+	codec           Codec
+	codecSet        bool
+	beforeCommit    func(context.Context) error
+	indexMemory     uint64
+	compactIdentity bool
 }
 
 type indexMemoryOption uint64
@@ -222,4 +223,20 @@ func nilInterface(value any) bool {
 	default:
 		return false
 	}
+}
+
+// WithSparseIdentity authenticates the presence bitmap, stored extent layout and
+// stored bytes without expanding omitted Zero pages. This versioned identity is
+// representation-sensitive; legacy artifacts remain readable. Use for snapshot
+// carriers, not callers requiring representation-independent payload digests.
+func WithSparseIdentity() WriteOption { return sparseIdentityOption{} }
+
+type sparseIdentityOption struct{}
+
+func (sparseIdentityOption) applyWrite(dst *writeOptions) error {
+	if dst.compactIdentity {
+		return fmt.Errorf("%w: duplicate sparse identity", ErrInvalidOption)
+	}
+	dst.compactIdentity = true
+	return nil
 }

@@ -108,13 +108,38 @@ type identityAccumulator struct {
 	logical          uint64
 }
 
-func newIdentityAccumulator(payloadSize uint64, payloadExtents []extent, payloadPacked, tailSize int64, presence []byte, storedExtents []extent) *identityAccumulator {
+func newIdentityAccumulator(payloadSize uint64, payloadExtents []extent, payloadPacked, tailSize int64, presence []byte, storedExtents []extent, compact ...bool) *identityAccumulator {
 	a := &identityAccumulator{
 		tail:             newTailHasher(uint64(tailSize)),
 		payloadRemaining: payloadPacked,
 		presence:         presence, payloadSize: payloadSize, extents: storedExtents,
 	}
-	if presence != nil {
+	if len(compact) > 0 && compact[0] {
+		// Domain separation prevents confusion with the original logical-byte hash.
+		// The bitmap distinguishes Hole from Zero; extents distinguish implicit Zero
+		// from stored bytes and bind every byte to its logical offset.
+		h := sha256.New()
+		h.Write([]byte("kuasar/tarstream/sparse-payload-v2\x00"))
+		writeHashUint64(h, payloadSize)
+		writeHashUint64(h, uint64(len(presence)))
+		h.Write(presence)
+		var count uint64
+		for _, e := range storedExtents {
+			if uint64(e.Offset) < payloadSize {
+				count++
+			}
+		}
+		writeHashUint64(h, count)
+		for _, e := range storedExtents {
+			if uint64(e.Offset) >= payloadSize {
+				break
+			}
+			writeHashUint64(h, uint64(e.Offset))
+			writeHashUint64(h, min(uint64(e.Size), payloadSize-uint64(e.Offset)))
+		}
+		a.payload = h
+		a.presence = nil // Stream only stored payload then the dense metadata tail.
+	} else if presence != nil {
 		a.payload, a.payloadRemaining = presencePayloadHasher(payloadSize, presence)
 	} else {
 		a.payload = newPayloadHasher(payloadSize, payloadExtents)
@@ -193,3 +218,5 @@ func (a *identityAccumulator) finish(name string, totalSize, payloadSize uint64)
 		payloadSize: payloadSize,
 	}
 }
+
+const sparseIdentityPAX = "KUASAR.identity"

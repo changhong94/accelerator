@@ -43,6 +43,14 @@ func WriteTo(ctx context.Context, w io.Writer, name string, src sparse.Source, o
 		return "", "", err
 	}
 
+	if opts.compactIdentity {
+		plan.compactIdentity = true
+		prefix := payloadPrefix(plan.name, plan.logical, plan.stored, plan.sparseMap, plan.payloadSize, true, true)
+		delta := int64(len(prefix) - len(plan.prefixParts[4]))
+		plan.prefixParts[4] = prefix
+		plan.packedStart += delta
+		plan.plaintextSize += delta
+	}
 	var artifactWriter io.Writer = w
 	var records *recordWriter
 	if opts.codec != nil {
@@ -72,19 +80,20 @@ func WriteTo(ctx context.Context, w io.Writer, name string, src sparse.Source, o
 }
 
 type writePlan struct {
-	name          string
-	logical       int64
-	stored        int64
-	sparseMap     []byte
-	extents       []extent
-	prefixParts   [5][]byte
-	packedStart   int64
-	packedSize    int64
-	payloadPad    int
-	plaintextSize int64
-	payloadSize   int64
-	payloadPacked int64
-	presence      []byte
+	name            string
+	logical         int64
+	stored          int64
+	sparseMap       []byte
+	extents         []extent
+	prefixParts     [5][]byte
+	packedStart     int64
+	packedSize      int64
+	payloadPad      int
+	plaintextSize   int64
+	payloadSize     int64
+	payloadPacked   int64
+	presence        []byte
+	compactIdentity bool
 }
 
 func (p *writePlan) writePrefix(w io.Writer) error {
@@ -284,8 +293,8 @@ func makeWritePlanLimited(ctx context.Context, name string, src sparse.Source, m
 
 // payloadPrefix renders all canonical bytes before the packed payload. The
 // sparse map, when present, is part of this prefix.
-func payloadPrefix(name string, logical, stored int64, sparseMap []byte, payloadSize int64, presence bool) []byte {
-	headers := makePayloadHeaders(name, logical, stored, payloadSize, sparseMap != nil, presence)
+func payloadPrefix(name string, logical, stored int64, sparseMap []byte, payloadSize int64, presence bool, compact ...bool) []byte {
+	headers := makePayloadHeaders(name, logical, stored, payloadSize, sparseMap != nil, presence, compact...)
 	var prefix bytes.Buffer
 	prefix.Write(headers.paxHeader[:])
 	prefix.Write(headers.pax)
@@ -308,7 +317,7 @@ type payloadHeaders struct {
 
 // makePayloadHeaders is the single canonical transport-header definition used
 // by both the encoder and the identity validator.
-func makePayloadHeaders(name string, logical, stored, payloadSize int64, sparseEncoding, presence bool) payloadHeaders {
+func makePayloadHeaders(name string, logical, stored, payloadSize int64, sparseEncoding, presence bool, compact ...bool) payloadHeaders {
 	ustarName := name
 	records := map[string]string{
 		"path":         name,
@@ -317,6 +326,9 @@ func makePayloadHeaders(name string, logical, stored, payloadSize int64, sparseE
 	}
 	if presence {
 		records[presencePAX] = "1"
+	}
+	if len(compact) > 0 && compact[0] {
+		records[sparseIdentityPAX] = "2"
 	}
 	if sparseEncoding {
 		// GNU mangles the ustar name of sparse entries; readers recover the
@@ -347,7 +359,7 @@ func makePayloadHeaders(name string, logical, stored, payloadSize int64, sparseE
 // writer. Data extents are read once; Zero extents are synthesized.
 func emitPlan(ctx context.Context, w io.Writer, plan *writePlan, src sparse.Source, beforeCommit func(context.Context) error) ([32]byte, error) {
 	identity := newIdentityAccumulator(
-		uint64(plan.payloadSize), nil, plan.payloadPacked, plan.logical-plan.payloadSize, plan.presence, plan.extents,
+		uint64(plan.payloadSize), nil, plan.payloadPacked, plan.logical-plan.payloadSize, plan.presence, plan.extents, plan.compactIdentity,
 	)
 	if err := plan.writePrefix(w); err != nil {
 		return [32]byte{}, err

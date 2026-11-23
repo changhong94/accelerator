@@ -257,11 +257,15 @@ type digestedSource struct {
 }
 
 func (s *digestedSource) Digest() (string, string) { return s.scheme, s.digest }
+
+// The default writer emits logical-byte identities. Do not reuse a v2
+// commitment when a caller republishes or replaces the metadata tail under
+// that policy; it must recompute rather than mislabeling the new artifact.
 func (s *digestedSource) TarStreamDigest(name string) ([32]byte, bool) {
-	return s.identity.digest, normalizeName(name) == s.name
+	return s.identity.digest, normalizeName(name) == s.name && !s.identity.compactIdentity
 }
 func (s *digestedSource) PayloadCommitment() (uint64, [32]byte, bool) {
-	return s.identity.payloadSize, s.identity.payload, true
+	return s.identity.payloadSize, s.identity.payload, !s.identity.compactIdentity
 }
 
 type encryptedDigestedSource struct {
@@ -275,10 +279,10 @@ type encryptedDigestedSource struct {
 
 func (s *encryptedDigestedSource) Digest() (string, string) { return s.scheme, s.digest }
 func (s *encryptedDigestedSource) TarStreamDigest(name string) ([32]byte, bool) {
-	return s.identity.digest, normalizeName(name) == s.name
+	return s.identity.digest, normalizeName(name) == s.name && !s.identity.compactIdentity
 }
 func (s *encryptedDigestedSource) PayloadCommitment() (uint64, [32]byte, bool) {
-	return s.identity.payloadSize, s.identity.payload, true
+	return s.identity.payloadSize, s.identity.payload, !s.identity.compactIdentity
 }
 func (s *encryptedDigestedSource) Close() error { return s.records.Close() }
 
@@ -396,6 +400,7 @@ func discoverDigest(ra io.ReaderAt, size int64, first *meta, dataStart int64) (c
 	if !isZeroBlock(trailer[:512]) || !isZeroBlock(trailer[512:]) {
 		return zero, false, fmt.Errorf("%w: invalid end-of-archive", ErrInvalidCanonicalTarstream)
 	}
+	identity.compactIdentity = first.compactIdentity
 	return identity, true, nil
 }
 
@@ -462,6 +467,7 @@ type meta struct {
 	hasPayloadSize   bool
 	canonicalPayload bool
 	presence         []byte
+	compactIdentity  bool
 }
 
 // locate scans entries until it finds the one named want (empty: the
@@ -635,6 +641,10 @@ func locateMatch(r io.Reader, skip func(n int64) error, includeInternal bool, ma
 			}
 			continue
 		}
+		identityVersion, identityMarked := entryPAX[sparseIdentityPAX]
+		if identityMarked && (identityVersion != "2" || pendingPresence == nil) {
+			return nil, fmt.Errorf("%w: unsupported sparse identity", ErrInvalidCanonicalTarstream)
+		}
 		mark, marked := entryPAX[presencePAX]
 		if marked && (mark != "1" || pendingPresence == nil) || !marked && pendingPresence != nil {
 			return nil, fmt.Errorf("%w: presence marker mismatch", ErrInvalidCanonicalTarstream)
@@ -709,15 +719,16 @@ func locateMatch(r io.Reader, skip func(n int64) error, includeInternal bool, ma
 				continue
 			}
 			return &meta{
-				name:        effName,
-				ordinal:     ordinal - 1,
-				logical:     realsize,
-				stored:      stored,
-				mapLen:      mapLen,
-				extents:     extents,
-				holes:       holes,
-				presence:    entryPresence,
-				payloadSize: payloadSize, hasPayloadSize: hasPayloadSize,
+				name:            effName,
+				ordinal:         ordinal - 1,
+				logical:         realsize,
+				stored:          stored,
+				mapLen:          mapLen,
+				extents:         extents,
+				holes:           holes,
+				presence:        entryPresence,
+				compactIdentity: identityMarked,
+				payloadSize:     payloadSize, hasPayloadSize: hasPayloadSize,
 				canonicalPayload: entryCanonicalMeta && entryPAXHeaderSeen && (entryPresence != nil || len(holes) > 0) &&
 					canonicalPayloadHeaders(blk[:], entryPAXHeader[:], entryPAX, effName, realsize, stored, payloadSize, true),
 			}, nil
@@ -745,7 +756,7 @@ func locateMatch(r io.Reader, skip func(n int64) error, includeInternal bool, ma
 // size, extents, and bytes; this check prevents uncommitted tar ownership or
 // permission metadata from changing extraction semantics under that identity.
 func canonicalPayloadHeaders(block, paxBlock []byte, paxRecords map[string]string, name string, logical, stored, payloadSize int64, sparseEncoding bool) bool {
-	want := makePayloadHeaders(name, logical, stored, payloadSize, sparseEncoding, paxRecords[presencePAX] == "1")
+	want := makePayloadHeaders(name, logical, stored, payloadSize, sparseEncoding, paxRecords[presencePAX] == "1", paxRecords[sparseIdentityPAX] == "2")
 	return maps.Equal(paxRecords, want.records) &&
 		bytes.Equal(paxBlock, want.paxHeader[:]) && bytes.Equal(block, want.payloadHeader[:])
 }

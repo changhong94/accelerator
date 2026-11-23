@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/bits"
 
+	"github.com/kuasar-sandbox/accelerator/pkg/immutableindex"
 	"github.com/kuasar-sandbox/accelerator/pkg/sparse"
 )
 
@@ -159,7 +160,9 @@ func readPresence(r io.Reader, stored int64) ([]byte, uint64, error) {
 	if !isZeroBlock(padding[:n]) {
 		return bad()
 	}
-	return p, payload, nil
+	// Validation above remains authoritative; only immutable bytes are shared.
+	b = immutableindex.ShareReadOnly(b)
+	return b[presenceHeaderSize:], payload, nil
 }
 
 // Walk logical present intervals without allocating an interval/prefix index.
