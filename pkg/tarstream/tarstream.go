@@ -90,6 +90,9 @@ func CarrierDigest(name string, src sparse.Source, options ...WriteOption) (stri
 	if err != nil {
 		return "", "", err
 	}
+	if opts.compactIdentity {
+		return "", "", fmt.Errorf("%w: WithSparseIdentity requires WriteTo", ErrInvalidOption)
+	}
 	if opts.beforeCommit != nil {
 		return "", "", fmt.Errorf("%w: WithBeforeCommit requires WriteTo", ErrInvalidOption)
 	}
@@ -120,9 +123,10 @@ func ComposeDigest(name string, totalSize, payloadSize uint64, payloadCommitment
 }
 
 type carrierIdentity struct {
-	digest      [32]byte
-	payload     [32]byte
-	payloadSize uint64
+	compactIdentity bool
+	digest          [32]byte
+	payload         [32]byte
+	payloadSize     uint64
 }
 
 func parseDigestMarker(name string) ([32]byte, bool) {
