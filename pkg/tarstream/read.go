@@ -757,6 +757,12 @@ func locateMatch(r io.Reader, skip func(n int64) error, includeInternal bool, ma
 // permission metadata from changing extraction semantics under that identity.
 func canonicalPayloadHeaders(block, paxBlock []byte, paxRecords map[string]string, name string, logical, stored, payloadSize int64, sparseEncoding bool) bool {
 	want := makePayloadHeaders(name, logical, stored, payloadSize, sparseEncoding, paxRecords[presencePAX] == "1", paxRecords[sparseIdentityPAX] == "2")
+	if padding, present := paxRecords[pagePaddingPAX]; present {
+		if !sparseEncoding || paxRecords[presencePAX] != "1" || len(padding) < 1 || len(padding) > 3585 || (len(padding)-1)%512 != 0 || strings.Trim(padding, "0") != "" {
+			return false
+		}
+		want = paddedPayloadHeaders(want, padding)
+	}
 	return maps.Equal(paxRecords, want.records) &&
 		bytes.Equal(paxBlock, want.paxHeader[:]) && bytes.Equal(block, want.payloadHeader[:])
 }

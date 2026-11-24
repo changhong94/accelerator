@@ -33,6 +33,7 @@ type writeOptions struct {
 	beforeCommit    func(context.Context) error
 	indexMemory     uint64
 	compactIdentity bool
+	pageAligned     bool
 }
 
 type indexMemoryOption uint64
@@ -240,3 +241,11 @@ func (sparseIdentityOption) applyWrite(dst *writeOptions) error {
 	dst.compactIdentity = true
 	return nil
 }
+
+// WithPageAlignedPayload aligns plaintext packed payload bytes for private CoW
+// mapping. It changes only bounded transport padding, never logical identity.
+func WithPageAlignedPayload() WriteOption { return pageAlignedOption{} }
+
+type pageAlignedOption struct{}
+
+func (pageAlignedOption) applyWrite(o *writeOptions) error { o.pageAligned = true; return nil }

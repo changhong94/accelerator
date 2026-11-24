@@ -51,6 +51,22 @@ func WriteTo(ctx context.Context, w io.Writer, name string, src sparse.Source, o
 		plan.packedStart += delta
 		plan.plaintextSize += delta
 	}
+	if opts.pageAligned && opts.codec == nil {
+		prefixBase := plan.packedStart - int64(len(plan.prefixParts[4]))
+		for n := 0; n < 8; n++ {
+			prefix := payloadPrefixAligned(plan.name, plan.logical, plan.stored, plan.sparseMap, plan.payloadSize, opts.compactIdentity, strings.Repeat("0", n*512+1))
+			if (prefixBase+int64(len(prefix)))%4096 == 0 {
+				delta := int64(len(prefix) - len(plan.prefixParts[4]))
+				plan.prefixParts[4] = prefix
+				plan.packedStart += delta
+				plan.plaintextSize += delta
+				break
+			}
+		}
+		if plan.packedStart%4096 != 0 {
+			return "", "", fmt.Errorf("tarstream: cannot align payload")
+		}
+	}
 	var artifactWriter io.Writer = w
 	var records *recordWriter
 	if opts.codec != nil {
@@ -295,6 +311,10 @@ func makeWritePlanLimited(ctx context.Context, name string, src sparse.Source, m
 // sparse map, when present, is part of this prefix.
 func payloadPrefix(name string, logical, stored int64, sparseMap []byte, payloadSize int64, presence bool, compact ...bool) []byte {
 	headers := makePayloadHeaders(name, logical, stored, payloadSize, sparseMap != nil, presence, compact...)
+	return encodePayloadPrefix(headers, sparseMap)
+}
+
+func encodePayloadPrefix(headers payloadHeaders, sparseMap []byte) []byte {
 	var prefix bytes.Buffer
 	prefix.Write(headers.paxHeader[:])
 	prefix.Write(headers.pax)
@@ -541,4 +561,18 @@ func octal(dst []byte, v int64) {
 	}
 	copy(dst, s)
 	dst[width] = 0
+}
+
+const pagePaddingPAX = "KUASAR.page_padding"
+
+func paddedPayloadHeaders(h payloadHeaders, padding string) payloadHeaders {
+	h.records[pagePaddingPAX] = padding
+	h.pax = encodePAX(h.records)
+	h.paxHeader = ustarBlock(rawHeader{name: "PaxHeaders.0/" + truncateStr(path.Base(h.records["GNU.sparse.name"]), 80), mode: 0o644, size: int64(len(h.pax)), typeflag: 'x'})
+	// GNU sparse name is always present in newly emitted carriers.
+	return h
+}
+func payloadPrefixAligned(name string, logical, stored int64, sparseMap []byte, payloadSize int64, compact bool, padding string) []byte {
+	h := makePayloadHeaders(name, logical, stored, payloadSize, true, true, compact)
+	return encodePayloadPrefix(paddedPayloadHeaders(h, padding), sparseMap)
 }
