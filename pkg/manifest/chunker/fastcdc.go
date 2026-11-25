@@ -149,7 +149,9 @@ func chunkCDC(r io.Reader, minSize, avgSize, maxSize uint32, cb Callback) error 
 	for {
 		// Fill the buffer if we have room and haven't hit EOF.
 		if !eof && pendingN < int(maxSize) {
-			n, err := io.ReadAtLeast(r, buf[pendingN:], 1)
+			// Reader fragmentation is not a content boundary. Accumulate enough
+			// bytes to evaluate the entire CDC window, unless the source ends.
+			n, err := io.ReadAtLeast(r, buf[pendingN:], int(maxSize)-pendingN)
 			if err != nil {
 				if err == io.EOF || err == io.ErrUnexpectedEOF {
 					eof = true
