@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"os"
 	"time"
 
 	"github.com/kuasar-sandbox/accelerator/pkg/cache"
@@ -95,12 +97,21 @@ func New(endpoint string, opts Options) (TierCloser, error) {
 // "we don't know". In a TieredCache chain, a false MISS at origin is
 // indistinguishable from a genuine absence — the cascade terminates and
 // the caller is told the key doesn't exist, even though it may.
+var readTraceEnabled = os.Getenv("KUASAR_REMOTE_FAULT_TRACE") == "1"
+
 func (c *impl) Get(ctx context.Context, p store.Partition, key store.ContentKey) (cache.CacheResult, cache.Blob, error) {
+	var start, acquired, written time.Time
+	if readTraceEnabled {
+		start = time.Now()
+	}
 	pc, err := c.getPool.Acquire(ctx)
 	if err != nil {
 		return cache.CacheMiss, nil, fmt.Errorf("cache: client.Get acquire: %w", err)
 	}
 
+	if readTraceEnabled {
+		acquired = time.Now()
+	}
 	req := &wire.Request{
 		Opcode:    wire.OpcodeObjectGet,
 		Namespace: partitionToWireNS(p),
@@ -117,9 +128,16 @@ func (c *impl) Get(ctx context.Context, p store.Partition, key store.ContentKey)
 		return cache.CacheMiss, nil, fmt.Errorf("cache: client.Get write: %w", err)
 	}
 
+	if readTraceEnabled {
+		written = time.Now()
+	}
 	resp, err := pc.ReadResponse(c.blobPool)
 	if err != nil {
 		return cache.CacheMiss, nil, fmt.Errorf("cache: client.Get read: %w", err)
+	}
+	if readTraceEnabled {
+		end := time.Now()
+		log.Printf("REMOTE_GET hash=%x pool_ns=%d send_ns=%d response_ns=%d", key[:8], acquired.Sub(start).Nanoseconds(), written.Sub(acquired).Nanoseconds(), end.Sub(written).Nanoseconds())
 	}
 	healthy = true
 

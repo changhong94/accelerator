@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/kuasar-sandbox/accelerator/pkg/cache"
 	"github.com/kuasar-sandbox/accelerator/pkg/manifest/codec"
@@ -337,12 +338,14 @@ func (s *manifestStream) readChunkAt(ctx context.Context, buf []byte, chunkIdx, 
 	if s.decryptor == nil {
 		return 0, readerr.Mark(fmt.Errorf("fetch: chunk %d: decryptor is nil", chunkIdx), false)
 	}
+	traceRemoteChunk("read", s, chunkIdx, e, offset, len(buf))
 	key := decryptedChunkKey{
 		ciphertextHash: e.CiphertextHash,
 		decryptKey:     s.keys[chunkIdx],
 		plaintextSize:  e.Size,
 	}
 	if lease := s.chunkCache.acquire(key); lease != nil {
+		traceRemoteChunk("hit", s, chunkIdx, e, offset, len(buf))
 		defer lease.release()
 		return copyChunkRange(buf, lease.bytes(), chunkIdx, e, offset, end)
 	}
@@ -367,11 +370,20 @@ func (s *manifestStream) readChunkDirect(
 	e codec.ChunkEntry,
 	offset uint64,
 ) (int, error) {
+	traceRemoteChunk("fetch", s, chunkIdx, e, offset, len(buf))
+	var begin, got, verified time.Time
+	if remoteFaultTrace {
+		begin = time.Now()
+		defer func() { traceReadStages(s, chunkIdx, e, "direct", begin, got, verified) }()
+	}
 	blob, err := s.loadChunkAt(ctx, chunkIdx, loadOnDemand)
 	if err != nil {
 		return 0, err
 	}
 	defer blob.Release()
+	if remoteFaultTrace {
+		got = time.Now()
+	}
 	ciphertext := blob.Bytes()
 	// The content key is SHA256(ciphertext) and is authenticated by the key
 	// table's AAD, so verifying the returned bytes against it rejects a corrupt
@@ -380,6 +392,9 @@ func (s *manifestStream) readChunkDirect(
 	// as received and keep the borrowed Blob bytes immutable throughout decode.
 	if s.verifyContent && sha256.Sum256(ciphertext) != e.CiphertextHash {
 		return 0, readerr.Mark(fmt.Errorf("chunk %d: ciphertext hash mismatch (corrupt or tampered store/cache)", chunkIdx), false)
+	}
+	if remoteFaultTrace {
+		verified = time.Now()
 	}
 	if offset == e.Offset && uint64(len(buf)) == uint64(e.Size) {
 		if err := s.decryptor.DecryptChunkTo(ctx, s.keys[chunkIdx], ciphertext, buf); err != nil {
@@ -404,14 +419,27 @@ func (s *manifestStream) readChunkDirect(
 // loadOwnedPlainChunk allocates exactly one plaintext-sized cache buffer and
 // keeps the immutable Blob alive while the decryptor writes directly into it.
 func (s *manifestStream) loadOwnedPlainChunk(ctx context.Context, chunkIdx uint64, e codec.ChunkEntry) ([]byte, error) {
+	traceRemoteChunk("decode", s, chunkIdx, e, e.Offset, int(e.Size))
+	var begin, got, verified time.Time
+	if remoteFaultTrace {
+		begin = time.Now()
+		defer func() { traceReadStages(s, chunkIdx, e, "cached", begin, got, verified) }()
+	}
+
 	blob, err := s.loadChunkAt(ctx, chunkIdx, loadOnDemand)
 	if err != nil {
 		return nil, err
+	}
+	if remoteFaultTrace {
+		got = time.Now()
 	}
 	ciphertext := blob.Bytes()
 	if s.verifyContent && sha256.Sum256(ciphertext) != e.CiphertextHash {
 		blob.Release()
 		return nil, readerr.Mark(fmt.Errorf("chunk %d: ciphertext hash mismatch (corrupt or tampered store/cache)", chunkIdx), false)
+	}
+	if remoteFaultTrace {
+		verified = time.Now()
 	}
 	plain := make([]byte, e.Size)
 	err = s.decryptor.DecryptChunkTo(ctx, s.keys[chunkIdx], ciphertext, plain)
